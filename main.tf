@@ -44,3 +44,118 @@ resource "tanzu-mission-control_cluster" "attach_cluster_with_kubeconfig_path" {
 
   ready_wait_timeout = "15m" # Default: waits until 3 min for the cluster to become ready
 }
+resource "tanzu-mission-control_security_policy" "cluster_scoped_baseline_security_policy" {
+  name = "tf-sp-test"
+
+  scope {
+    cluster {
+      management_cluster_name = "attached"
+      provisioner_name        = "attached"
+      name                    = tanzu-mission-control_cluster.attach_cluster_with_kubeconfig_path.name
+    }
+  }
+
+  spec {
+    input {
+      baseline {
+        audit              = true
+        disable_native_psp = false
+      }
+    }
+
+    namespace_selector {
+      match_expressions {
+        key      = "not-a-component"
+        operator = "DoesNotExist"
+        values   = []
+      }
+    }
+  }
+}
+/*
+ Cluster scoped Tanzu Mission Control IAM policy.
+ This resource is applied on a cluster to provision the role bindings on the associated cluster.
+ The defined scope block can be updated to change the access policy's scope.
+ */
+resource "tanzu-mission-control_iam_policy" "cluster_scoped_iam_policy" {
+  scope {
+    cluster {
+      management_cluster_name = "attached" # Default: attached
+      provisioner_name        = "attached" # Default: attached
+      name                    = tanzu-mission-control_cluster.attach_cluster_with_kubeconfig_path.name
+    }
+  }
+
+  role_bindings {
+    role = "cluster.admin"
+    subjects {
+      name = "test"
+      kind = "GROUP"
+    }
+  }
+  role_bindings {
+    role = "cluster.edit"
+    subjects {
+      name = "test-1"
+      kind = "USER"
+    }
+    subjects {
+      name = "test-2"
+      kind = "USER"
+    }
+  }
+}
+/*
+Cluster scoped Tanzu Mission Control custom policy with tmc-require-labels input recipe.
+This policy is applied to a cluster with the tmc-require-labels configuration option.
+The defined scope and input blocks can be updated to change the policy's scope and recipe, respectively.
+*/
+resource "tanzu-mission-control_custom_policy" "cluster_scoped_tmc-require-labels_custom_policy" {
+  name = "tf-custom-test"
+
+  scope {
+    cluster {
+      management_cluster_name = "attached"
+      provisioner_name        = "attached"
+      name                    = tanzu-mission-control_cluster.attach_cluster_with_kubeconfig_path.name
+    }
+  }
+
+  spec {
+    input {
+      tmc_require_labels {
+        audit = false
+        parameters {
+          labels {
+            key   = "test"
+            value = "optional"
+          }
+        }
+        target_kubernetes_resources {
+          api_groups = [
+            "apps",
+          ]
+          kinds = [
+            "Event",
+          ]
+        }
+      }
+    }
+
+    namespace_selector {
+      match_expressions {
+        key      = "component"
+        operator = "In"
+        values = [
+          "api-server",
+          "agent-gateway"
+        ]
+      }
+      match_expressions {
+        key      = "not-a-component"
+        operator = "DoesNotExist"
+        values   = []
+      }
+    }
+  }
+}
